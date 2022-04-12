@@ -91,6 +91,9 @@ public:
     }
 
     void preprocess() {
+        // resize the level and rank vector
+        level.resize(N, 0);
+        rank.resize(N);
         // temp vector to add nodes to queue
         std::vector<std::pair<int, int>> temp;
         for (int node = 0; node < N; node++) {
