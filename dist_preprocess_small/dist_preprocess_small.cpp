@@ -8,6 +8,9 @@
 #include <memory>
 #include <cassert>
 
+// cd dist_preprocess_small
+// g++ -pipe -O2 -std=c++14 dist_preprocess_small.cpp -lm
+
 class Graph
 {
     typedef int Distance;
@@ -445,11 +448,29 @@ private:
                     iterator++;
                 }
             }
+            // remove all outgoing shortcuts that do not increase in node importance
+            for (auto iterator = outgoing_shortcuts[node].begin(); iterator != outgoing_shortcuts[node].end();) {
+                // if rank of outgoing node is less than current, remove this edge
+                if (rank[iterator->to] < rank[node]) {
+                    iterator = outgoing_shortcuts[node].erase(iterator);
+                } else {
+                    iterator++;
+                }
+            }
             // remove all incoming edges that do not increase in node importance
             for (auto iterator = incoming_edges[node].begin(); iterator != incoming_edges[node].end();) {
                 // if rank of incoming node is less than current, remove this edge
                 if (rank[iterator->first] < rank[node]) {
                     iterator = incoming_edges[node].erase(iterator);
+                } else {
+                    iterator++;
+                }
+            }
+            // remove all incoming shortcuts that do not increase in node importance
+            for (auto iterator = incoming_shortcuts[node].begin(); iterator != incoming_shortcuts[node].end();) {
+                // if rank of incoming node is less than current, remove this edge
+                if (rank[iterator->to] < rank[node]) {
+                    iterator = incoming_shortcuts[node].erase(iterator);
                 } else {
                     iterator++;
                 }
