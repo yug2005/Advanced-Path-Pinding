@@ -92,8 +92,11 @@ public:
 
     void preprocess() {
         // resize the level and rank vector
-        level.resize(N, 0);
         rank.resize(N);
+        level.resize(N, 0);
+        contracted.resize(N, false); 
+        incoming_shortcuts.resize(N);
+        outgoing_shortcuts.resize(N);
         // temp vector to add nodes to queue
         std::vector<std::pair<int, int>> temp;
         for (int node = 0; node < N; node++) {
@@ -110,18 +113,38 @@ public:
         while (queue.size() > 0) {
             auto top = queue.top();
             queue.pop(); 
+            // std::cout << "top: " << top.second << std::endl;
+
             // recompute the importance of the node
             std::vector<Shortcut> nodeShortcuts; 
             top.first = do_shortcut(top.second, nodeShortcuts, level[top.second]); 
             // compare the new importance to the node in the queue
-            if (top.first < queue.top().first) {
+            if (!queue.empty() && top.first > queue.top().first) {
                 queue.push(top);
                 nodeShortcuts.clear(); 
                 continue; 
             }
+
+            // std::cout << "made it to this point." << std::endl;
             // if the top node has least importance, then contract it
             // add the shortcuts
             for (Shortcut& s : nodeShortcuts) {
+                // std::cout << "adding shortcut from " << s.from << " to " << s.to << " with cost " << s.cost << std::endl;
+                // remove any outgoing edges that are the same as the shortcut 
+                for (auto iterator = outgoing_edges[s.from].begin(); iterator != outgoing_edges[s.from].end();) {
+                    if (iterator->first == s.to) {
+                        iterator = outgoing_edges[s.from].erase(iterator);
+                    }
+                    else iterator++;
+                }
+                // remove any incoming edges that are the same as the shortcut
+                for (auto iterator = incoming_edges[s.to].begin(); iterator != incoming_edges[s.to].end();) {
+                    if (iterator->first == s.from) {
+                        iterator = incoming_edges[s.to].erase(iterator);
+                    }
+                    else iterator++;
+                }
+                // add the shortcut to the graph
                 outgoing_shortcuts[s.from].push_back(s);
                 incoming_shortcuts[s.to].push_back(s);
             }
@@ -138,6 +161,10 @@ public:
             nodeRank++; 
         }
 
+        // for (int node = 0; node < N; node++) {
+        //     std::cout << "rank of node " << node << " is " << rank[node] << std::endl;
+        // }
+
         // remove the edges and shortcuts that do not increase in node importance
         remove_unnecessary_edges();
     }
@@ -145,41 +172,35 @@ public:
     // Returns distance from s to t in the graph
     int query(int u, int w) {
         if (u == w) return 0; 
-        update(u, 0, true);
-        update(w, 0, false);
         s = u; 
         t = w;
 
+        std::vector<std::vector<bool>> processed(2, std::vector<bool>(N, false));
         bidistance[0] = std::vector<int>(N, INFINITY);
         bidistance[1] = std::vector<int>(N, INFINITY);
 
-        bidistance[0][s] = 0;
-        bidistance[1][t] = 0;
-
-        std::vector<std::vector<bool>> processed(2, std::vector<bool>(N, false));
+        update(u, 0, true);
+        update(w, 0, false);
 
         estimate = INFINITY; 
 
         while (!diqueue[0].empty() || !diqueue[1].empty()) {
             while (!diqueue[0].empty()) {
                 auto current = diqueue[0].pop().second;
+                // std::cout << "forward node: " << current << std::endl;
+                // std::cout << "forward distance: " << bidistance[0][current] << std::endl;
                 if (processed[0][current]) break;
                 if (bidistance[0][current] < estimate) {
                     // add the outgoing edges to the queue
                     for (auto& e : outgoing_edges[current]) {
-                        if (bidistance[0][current] + e.second < bidistance[0][e.first]) {
-                            bidistance[0][e.first] = bidistance[0][current] + e.second;
-                            diqueue[0].update(e.first, bidistance[0][e.first]);
-                        }
+                        update(e.first, bidistance[0][current] + e.second, true);
                     }
                     // add the outgoing shortcuts to the queue
                     for (auto& s : outgoing_shortcuts[current]) {
-                        if (bidistance[0][current] + s.cost < bidistance[0][s.to]) {
-                            bidistance[0][s.to] = bidistance[0][current] + s.cost;
-                            diqueue[0].update(s.to, bidistance[0][s.to]);
-                        }
+                        update(s.to, bidistance[0][current] + s.cost, true);
                     }
                 }
+                processed[0][current] = true; 
                 if (processed[1][current] && bidistance[0][current] + bidistance[1][current] < estimate) {
                     estimate = bidistance[0][current] + bidistance[1][current];
                 }
@@ -187,23 +208,19 @@ public:
             }
             while (!diqueue[1].empty()) {
                 auto current = diqueue[1].pop().second; 
+                // std::cout << "backward node: " << current << std::endl;
                 if (processed[1][current]) break;
                 if (bidistance[1][current] < estimate) {
                     // add the incoming edges to the queue
                     for (auto& e : incoming_edges[current]) {
-                        if (bidistance[1][current] + e.second < bidistance[1][e.first]) {
-                            bidistance[1][e.first] = bidistance[1][current] + e.second;
-                            diqueue[1].update(e.first, bidistance[1][e.first]);
-                        }
+                        update(e.first, bidistance[1][current] + e.second, false);
                     }
                     // add the incoming shortcuts to the queue
                     for (auto& s : incoming_shortcuts[current]) {
-                        if (bidistance[1][current] + s.cost < bidistance[1][s.from]) {
-                            bidistance[1][s.from] = bidistance[1][current] + s.cost;
-                            diqueue[1].update(s.from, bidistance[1][s.from]);
-                        }
+                        update(s.from, bidistance[1][current] + s.cost, false);
                     }
                 }
+                processed[1][current] = true;
                 if (processed[0][current] && bidistance[0][current] + bidistance[1][current] < estimate) {
                     estimate = bidistance[0][current] + bidistance[1][current];
                 }
@@ -211,7 +228,11 @@ public:
             }
         }
 
-        return estimate;
+        if (estimate == INFINITY) {
+            return -1;
+        } else {
+            return estimate;
+        }
     }
 
 private:
@@ -274,6 +295,7 @@ private:
     // Adds all the shortcuts for the case when node v is contracted, and returns the importance of node v
     // in this case
     int do_shortcut(int v, std::vector<Shortcut>& shortcuts, int& mylevel) {
+        // std::cout << "in do_shortcut" << std::endl;
         // Implement this method yourself
         shortcuts.clear();
         // importance criteria
@@ -284,12 +306,10 @@ private:
         if ((incoming_edges[v].empty() && incoming_shortcuts[v].empty()) || 
             (outgoing_edges[v].empty() && outgoing_shortcuts[v].empty())) {
             // ? What do you do when there are no incoming or outgoing edges?
+            // std::cout << "There are no incoming or outgoing edges" << std::endl;
             return ed + cn + sc + mylevel; 
         }
-        // num of outgoing edges and shortcuts for node v
-        int num_edges = outgoing_edges[v].size();
-        int num_shortcuts = outgoing_shortcuts[v].size();
-        
+        // std::cout << "finding the max outgoing edge." << std::endl;
         // find max outgoing edge or shortcut for stoping witness search
         int max_out = 0; 
         for (std::pair<int, int>& e : outgoing_edges[v]) {
@@ -306,6 +326,7 @@ private:
                 max_out = s.cost;
             }
         }
+        // std::cout << "max out : " << max_out << std::endl;
 
         // witness search
         // for every predecessor edge of v (u, v), add shortcuts if appropriate
@@ -338,14 +359,24 @@ private:
             append_shortcuts(u, cost, v, witness_max, shortcuts); 
         }
 
+        // std::cout << "shortcuts size : " << shortcuts.size() << std::endl;
+
         sc = shortcuts.size(); 
         ed += sc; 
+
+        // std::cout << "ed : " << ed << std::endl;
+        // std::cout << "cn : " << cn << std::endl;
+        // std::cout << "sc : " << sc << std::endl;
+        // std::cout << "mylevel : " << mylevel << std::endl;
+
+        // std::cout << "returning importance " << ed + cn + sc + mylevel << std::endl;
 
         // Add neighbors and shortcut cover heuristics
         return ed + cn + sc + mylevel;
     }
 
     void append_shortcuts(int u, int cost, int v, int witness_max, std::vector<Shortcut>& shortcuts) {
+        // std::cout << "in append shorcuts." << std::endl;
         int num_edges = outgoing_edges[v].size();
         int num_shortcuts = outgoing_shortcuts[v].size();
         // find out whether there are witness paths
@@ -446,6 +477,7 @@ private:
             for (auto iterator = outgoing_edges[node].begin(); iterator != outgoing_edges[node].end();) {
                 // if rank of outgoing node is less than current, remove this edge
                 if (rank[iterator->first] < rank[node]) {
+                    // std::cout << "removing outgoing edge from " << node << " to " << iterator->first << std::endl;
                     iterator = outgoing_edges[node].erase(iterator);
                 } else {
                     iterator++;
@@ -455,6 +487,7 @@ private:
             for (auto iterator = outgoing_shortcuts[node].begin(); iterator != outgoing_shortcuts[node].end();) {
                 // if rank of outgoing node is less than current, remove this edge
                 if (rank[iterator->to] < rank[node]) {
+                    // std::cout << "removing outgoing shortcut from " << node << " to " << iterator->to << std::endl;
                     iterator = outgoing_shortcuts[node].erase(iterator);
                 } else {
                     iterator++;
@@ -464,6 +497,7 @@ private:
             for (auto iterator = incoming_edges[node].begin(); iterator != incoming_edges[node].end();) {
                 // if rank of incoming node is less than current, remove this edge
                 if (rank[iterator->first] < rank[node]) {
+                    // std::cout << "removing incoming edge from " << iterator->first << " to " << node << std::endl;
                     iterator = incoming_edges[node].erase(iterator);
                 } else {
                     iterator++;
@@ -472,7 +506,8 @@ private:
             // remove all incoming shortcuts that do not increase in node importance
             for (auto iterator = incoming_shortcuts[node].begin(); iterator != incoming_shortcuts[node].end();) {
                 // if rank of incoming node is less than current, remove this edge
-                if (rank[iterator->to] < rank[node]) {
+                if (rank[iterator->from] < rank[node]) {
+                    // std::cout << "removing incoming shortcut from " << iterator->from << " to " << node << std::endl;
                     iterator = incoming_shortcuts[node].erase(iterator);
                 } else {
                     iterator++;
