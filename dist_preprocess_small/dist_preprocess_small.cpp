@@ -2,6 +2,8 @@
 #include <cstring>
 #include <vector>
 #include <algorithm>
+#include <unordered_map>
+#include <unordered_set>
 #include <limits>
 #include <queue>
 #include <iostream>
@@ -21,13 +23,13 @@ class Graph
     // Source and target
     int s, t;
     // Estimate of the distance from s to t
-    int estimate = INFINITY;
+    int estimate = INFIN;
     // Lists of edges outgoing from each node
     std::vector<std::vector<std::pair<int, int>>> outgoing_edges;
     // Lists of edges incoming to each node
     std::vector<std::vector<std::pair<int, int>>> incoming_edges;
 
-    static constexpr int INFINITY = std::numeric_limits<int>::max() / 2;
+    static constexpr int INFIN = std::numeric_limits<int>::max() / 2;
     // Levels of nodes for node ordering
     std::vector<int> level;
     // Ranks of nodes - positions in the node ordering
@@ -77,7 +79,7 @@ class Graph
 public:
     Graph() {
         read_stdin();
-        bidistance.resize(2, std::vector<int>(N, INFINITY));
+        bidistance.resize(2, std::vector<int>(N, INFIN));
     }
 
     int get_n() { return N;}
@@ -98,28 +100,35 @@ public:
         incoming_shortcuts.resize(N);
         outgoing_shortcuts.resize(N);
         // temp vector to add nodes to queue
-        std::vector<std::pair<int, int>> temp;
+        std::vector<std::pair<int, int>> queue;
         for (int node = 0; node < N; node++) {
-            temp.push_back({0, node}); 
+            queue.push_back({0, node}); 
         }
+        struct min_heap {
+            inline bool operator()(const std::pair<int, int>& a, const std::pair<int, int>& b) {
+                return a.first > b.first;
+            }
+        };
 
         // Priority queue will store pairs of (importance, node) with the least important node in the head
-        Queue queue(temp.begin(), temp.end());
+        // Queue queue(temp.begin(), temp.end());
 
         int nodeRank = 0; 
 
         // Implement the rest of the algorithm yourself
         // get the top of the queue
         while (queue.size() > 0) {
-            auto top = queue.top();
-            queue.pop(); 
-            
+            auto top = queue.front(); 
+            std::pop_heap(queue.begin(), queue.end(), min_heap());
+            queue.pop_back(); 
+            std::cout << "node : " << top.second + 1<< std::endl;
             // recompute the importance of the node
             std::vector<Shortcut> nodeShortcuts; 
             top.first = do_shortcut(top.second, nodeShortcuts, level[top.second]); 
             // compare the new importance to the node in the queue
-            if (!queue.empty() && top.first > queue.top().first) {
-                queue.push(top);
+            if (!queue.empty() && top.first > queue.front().first) {
+                queue.push_back(top);
+                std::push_heap(queue.begin(), queue.end(), min_heap());
                 nodeShortcuts.clear(); 
                 continue; 
             }
@@ -153,9 +162,14 @@ public:
                 level[e.first] = std::max(level[e.first], level[top.second] + 1);
             }
             // mark the node as contracted
+            std::cout << "contracted : " << top.second + 1 << std::endl;
             contracted[top.second] = true; 
             rank[top.second] = nodeRank; 
             nodeRank++; 
+        }
+
+        for (int node = 0; node < N; node++) {
+            std::cout << "rank of node " << node + 1 << " is " << rank[node] << std::endl;
         }
 
         // remove the edges and shortcuts that do not increase in node importance
@@ -169,17 +183,18 @@ public:
         t = w;
 
         std::vector<std::vector<bool>> processed(2, std::vector<bool>(N, false));
-        bidistance[0] = std::vector<int>(N, INFINITY);
-        bidistance[1] = std::vector<int>(N, INFINITY);
+        bidistance[0] = std::vector<int>(N, INFIN);
+        bidistance[1] = std::vector<int>(N, INFIN);
 
         update(u, 0, true);
         update(w, 0, false);
 
-        estimate = INFINITY; 
+        estimate = INFIN; 
 
         while (!diqueue[0].empty() || !diqueue[1].empty()) {
             while (!diqueue[0].empty()) {
                 auto current = diqueue[0].pop().second;
+                std::cout << "forward current: " << current << std::endl;
                 if (processed[0][current]) break;
                 if (bidistance[0][current] < estimate) {
                     // add the outgoing edges to the queue
@@ -199,6 +214,7 @@ public:
             }
             while (!diqueue[1].empty()) {
                 auto current = diqueue[1].pop().second; 
+                std::cout << "backward current: " << current << std::endl;
                 if (processed[1][current]) break;
                 if (bidistance[1][current] < estimate) {
                     // add the incoming edges to the queue
@@ -218,7 +234,7 @@ public:
             }
         }
 
-        if (estimate == INFINITY) {
+        if (estimate == INFIN) {
             return -1;
         } else {
             return estimate;
@@ -298,21 +314,26 @@ private:
             return ed + cn + sc + mylevel; 
         }
         // find max outgoing edge or shortcut for stoping witness search
-        int max_out = 0; 
+        // int max_out = 0; 
+        std::unordered_map<int, int> neighbors; 
         for (std::pair<int, int>& e : outgoing_edges[v]) {
             if (contracted[e.first]) cn++; 
+            else neighbors[e.first] = e.second;
             // update the max out if the current edge is longer
-            if (e.second > max_out) {
-                max_out = e.second;
-            }
+            // if (e.second > max_out) {
+            //     max_out = e.second;
+            // }
         }
         for (Shortcut& s : outgoing_shortcuts[v]) {
             if (contracted[s.to]) cn++; 
+            else neighbors[s.to] = s.cost;
             // update the max out if the current shortcut is longer
-            if (s.cost > max_out) {
-                max_out = s.cost;
-            }
+            // if (s.cost > max_out) {
+            //     max_out = s.cost;
+            // }
         }
+
+        std::cout << "num neighbors: " << neighbors.size() << std::endl;
 
         // witness search
         // for every predecessor edge of v (u, v), add shortcuts if appropriate
@@ -325,9 +346,9 @@ private:
             }
             int cost = edge.second;
             // find the max length of the witness path
-            int witness_max = cost + max_out; 
+            // int witness_max = cost + max_out; 
             
-            append_shortcuts(u, cost, v, witness_max, shortcuts);
+            append_shortcuts(u, cost, v, shortcuts, neighbors);
         }
 
         // for every predecessor shortcut of v (s.from, v), add shortcuts if appropriate
@@ -340,110 +361,112 @@ private:
             }
             int cost = shortcut.cost;
             // find the max length of the witness path
-            int witness_max = cost + max_out;
+            // int witness_max = cost + max_out;
 
-            append_shortcuts(u, cost, v, witness_max, shortcuts); 
+            append_shortcuts(u, cost, v, shortcuts, neighbors); 
         }
 
         sc = shortcuts.size(); 
         ed += sc; 
 
+        std::cout << "sc: " << sc << " cn: " << cn << " ed: " << ed << " L: " << mylevel << std::endl;
+
         // Add neighbors and shortcut cover heuristics
         return ed + cn + sc + mylevel;
     }
 
-    void append_shortcuts(int u, int cost, int v, int witness_max, std::vector<Shortcut>& shortcuts) {
+    void append_shortcuts(int u, int cost, int v, std::vector<Shortcut>& shortcuts, std::unordered_map<int, int>& neighbors) {
         int num_edges = outgoing_edges[v].size();
         int num_shortcuts = outgoing_shortcuts[v].size();
-        // find out whether there are witness paths
-        std::vector<bool> witness_found = find_witness({u, cost}, v, witness_max, 5);
+
+        // the nodes for which there are witnesses
+        std::unordered_set<int> witness_found; 
+        find_witness(u, cost, v, 3, neighbors, witness_found);
         // append shortcuts if there are no witness paths 
-        for (int index = 0; index < num_edges; index++) {
-            auto e = outgoing_edges[v][index];
-            // if neighbor is contracted, add to contracted neighbors and continue
-            if (contracted[e.first] || witness_found[index]) {
-                continue; 
+        for (auto& e : outgoing_edges[v]) {
+            if (u != e.first && !contracted[e.first] && witness_found.find(e.first) == witness_found.end()) {
+                std::cout << "adding shortcut from " << u + 1 << " to " << e.first + 1 << std::endl;
+                shortcuts.push_back({u, e.first, cost + e.second});
             }
-            // if there was no witness path found, then create a shortcut
-            shortcuts.push_back({u, e.first, cost + e.second});
         }
-        for (int index = num_edges; index < num_edges + num_shortcuts; index++) {
-            auto s = outgoing_shortcuts[v][index - num_edges];
-            // if neighbor is contracted, add to contracted neighbors and continue
-            if (contracted[s.to] || witness_found[index]) {
-                continue; 
+        for (auto& s : outgoing_shortcuts[v]) {
+            if (u != s.to && !contracted[s.to] && witness_found.find(s.to) == witness_found.end()) {
+                std::cout << "adding shortcut from " << u + 1 << " to " << s.to + 1 << std::endl;
+                shortcuts.push_back({u, s.to, cost + s.cost});
             }
-            // if there was no witness path found, then create a shortcut
-            shortcuts.push_back({u, s.to, cost + s.cost});
         }
     }
 
-    std::vector<bool> find_witness(std::pair<int, int> incoming, int v, int witness_max, int number_of_hops) {
+    void find_witness(int u, int cost, int v, int number_of_hops, std::unordered_map<int, int>& neighbors, 
+                      std::unordered_set<int>& witness_found) {
         // perform dijkstra ignoring the node v to find the witness paths
         // if the path is shorter than the length through v, then there is a witness path
         int num_edges = outgoing_edges[v].size();
         int num_shortcuts = outgoing_shortcuts[v].size();
 
-        std::vector<bool> witness_found(num_edges + num_shortcuts, false); 
-
-        std::vector<int> distance(N, INFINITY);
+        std::vector<bool> visited(N, false); 
+        std::vector<int> distance(N, INFIN);
         std::vector<int> hops(N, 0); 
         Queue queue; 
-        queue.push({0, incoming.first}); 
+
+        distance[u] = 0; 
+        queue.push({0, u}); 
 
         while (!queue.empty()) {
             // first : distance second : node
             auto top = queue.top(); 
+            auto current = top.second;
             queue.pop();
 
-            // check whether we are at any of the outgoing nodes
-            for (int index = 0; index < num_edges; index++) {
-                if (!witness_found[index]) {
-                    auto e = outgoing_edges[v][index];
-                    // if the path is shorter, then there is a witness path
-                    if (top.second == e.first && top.first <= incoming.second + e.second){
-                        witness_found[index] = true;
-                    }
+            if (visited[current]) continue; 
+
+            // check whether we are at any of the outgoing nodes 
+            if (current != u && neighbors.find(current) != neighbors.end()) {
+                std::cout << "found witness path from node " << u + 1 << " to " << current + 1 << std::endl;
+                // if the distance ignoring v is less than the distance to the neighbor, then there is a witness path
+                if (top.first < cost + neighbors[current]) {
+                    witness_found.insert(current); 
                 }
-            }
-            // check whether we are at any of the outgoing shortcuts
-            for (int index = num_edges; index < num_edges + num_shortcuts; index++) {
-                if (!witness_found[index]) {
-                    auto s = outgoing_shortcuts[v][index - num_edges];
-                    // if the path is shorter, then there is a witness path
-                    if (top.second == s.to && top.first <= incoming.second + s.cost) {
-                        witness_found[index] = true;
-                    }
-                }
+                continue; 
             }
 
-            // if the distance is past the max length, then stop witness search
             // if the number of hops is more than max, then stop witness search
-            if (top.first >= witness_max || hops[top.second] > number_of_hops) {
+            if (hops[current] > number_of_hops) {
                 break;
             }
 
             // add all the neighbors to the queue
-            for (auto& e : outgoing_edges[top.second]) {
+            for (auto& e : outgoing_edges[current]) {
                 // ignore node v
-                if (e.first == v) {
-                    continue;
-                }
+                if (e.first == v)  continue;
                 // relax the outgoing edge
                 int d = top.first + e.second;
                 if (d < distance[e.first]) {
                     distance[e.first] = d;
                     // update the number of hops
-                    hops[e.first] = hops[top.second] + 1;
+                    hops[e.first] = hops[current] + 1;
                     queue.push({d, e.first});
                 }
             }
+            for (auto& s : outgoing_shortcuts[current]) {
+                // ignore node v
+                if (s.to == v) continue;
+                // relax the outgoing shortcut
+                int d = top.first + s.cost;
+                if (d < distance[s.to]) {
+                    distance[s.to] = d;
+                    // update the number of hops
+                    hops[s.to] = hops[current] + 1;
+                    queue.push({d, s.to});
+                }
+            }
+
+            visited[current] = true; 
         }
 
+        visited.clear();
         distance.clear(); 
         hops.clear(); 
-
-        return witness_found;
     }
 
     void remove_unnecessary_edges() { 
@@ -453,6 +476,7 @@ private:
             for (auto iterator = outgoing_edges[node].begin(); iterator != outgoing_edges[node].end();) {
                 // if rank of outgoing node is less than current, remove this edge
                 if (rank[iterator->first] < rank[node]) {
+                    std::cout << "removing outgoing edge from " << node + 1 << " to " << iterator->first + 1 << std::endl;
                     iterator = outgoing_edges[node].erase(iterator);
                 } else {
                     iterator++;
@@ -462,6 +486,7 @@ private:
             for (auto iterator = outgoing_shortcuts[node].begin(); iterator != outgoing_shortcuts[node].end();) {
                 // if rank of outgoing node is less than current, remove this edge
                 if (rank[iterator->to] < rank[node]) {
+                    std::cout << "removing outgoing shortcut from " << node + 1 << " to " << iterator->to + 1 << std::endl;
                     iterator = outgoing_shortcuts[node].erase(iterator);
                 } else {
                     iterator++;
@@ -471,6 +496,7 @@ private:
             for (auto iterator = incoming_edges[node].begin(); iterator != incoming_edges[node].end();) {
                 // if rank of incoming node is less than current, remove this edge
                 if (rank[iterator->first] < rank[node]) {
+                    std::cout << "removing incoming edge from " << node + 1 << " to " << iterator->first + 1 << std::endl;
                     iterator = incoming_edges[node].erase(iterator);
                 } else {
                     iterator++;
@@ -480,6 +506,7 @@ private:
             for (auto iterator = incoming_shortcuts[node].begin(); iterator != incoming_shortcuts[node].end();) {
                 // if rank of incoming node is less than current, remove this edge
                 if (rank[iterator->from] < rank[node]) {
+                    std::cout << "removing incoming shortcut from " << node + 1 << " to " << iterator->from + 1 << std::endl;
                     iterator = incoming_shortcuts[node].erase(iterator);
                 } else {
                     iterator++;
@@ -545,7 +572,7 @@ private:
 int main() {
     Graph g;
     g.preprocess();
-    std::cout << "Ready" << std::endl;
+    std::cout  << "Ready" << std::endl;
 
     int t;
     assert(scanf("%d", &t) == 1);
